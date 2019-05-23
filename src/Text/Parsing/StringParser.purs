@@ -5,12 +5,13 @@ module Text.Parsing.StringParser where
 import Prelude
 
 import Control.Apply (lift2)
-import Control.MonadPlus (class MonadPlus, class MonadZero, class Alternative)
-import Control.Monad.Rec.Class (class MonadRec, tailRecM, Step(..))
-import Control.Plus (class Plus, class Alt)
 import Control.Lazy (class Lazy)
+import Control.Monad.Rec.Class (class MonadRec, tailRecM, Step(..))
+import Control.MonadPlus (class MonadPlus, class MonadZero, class Alternative)
+import Control.Plus (class Plus, class Alt)
 import Data.Bifunctor (bimap, lmap)
 import Data.Either (Either(..))
+import Data.List (List(..))
 
 -- | A position in an input string.
 type Pos = Int
@@ -25,11 +26,13 @@ type Pos = Int
 -- | every time we match a character.
 type PosString = { str :: String, pos :: Pos }
 
+type Suggestion = { autoComplete :: String, suggestion :: String }
+
 -- | The type of parsing errors.
-data ParseError = ParseError String
+data ParseError = ParseError { msg :: String, suggestions :: List Suggestion }
 
 instance showParseError :: Show ParseError where
-  show (ParseError msg) = msg
+  show (ParseError r) = "ParseError " <> show r
 
 derive instance eqParseError :: Eq ParseError
 
@@ -60,14 +63,15 @@ instance applicativeParser :: Applicative Parser where
   pure a = Parser \s -> Right { result: a, suffix: s }
 
 instance altParser :: Alt Parser where
-  alt (Parser p1) (Parser p2) = Parser \s ->
+  alt (Parser p1) p2 = Parser \s ->
     case p1 s of
-      Left { error, pos } | s.pos == pos -> p2 s
-                          | otherwise -> Left { error, pos }
+      left@ Left { error: ParseError { msg, suggestions }, pos } 
+          | s.pos == pos -> unParser (addSuggestions suggestions p2) s
+          | otherwise -> left
       right -> right
 
 instance plusParser :: Plus Parser where
-  empty = fail "No alternative"
+  empty = fail "No alternative" Nil
 
 instance alternativeParser :: Alternative Parser
 
@@ -91,9 +95,19 @@ instance monadRecParser :: MonadRec Parser where
 instance lazyParser :: Lazy (Parser a) where
   defer f = Parser $ \str -> unParser (f unit) str
 
+-- | Fail with the specified message and suggestions.
+fail :: forall a. String -> List Suggestion -> Parser a
+fail msg suggestions = Parser \{ pos } -> Left { pos, error: ParseError { msg, suggestions } }
+
 -- | Fail with the specified message.
-fail :: forall a. String -> Parser a
-fail msg = Parser \{ pos } -> Left { pos, error: ParseError msg }
+fail' :: forall a. String -> Parser a
+fail' msg = fail msg Nil
+
+addSuggestions :: forall a. List Suggestion -> Parser a -> Parser a
+addSuggestions ss (Parser p) = Parser \s ->
+  case p s of
+    Left { error: ParseError { msg, suggestions }, pos } -> Left { error: ParseError { msg, suggestions: ss <> suggestions }, pos }
+    other -> other 
 
 -- | In case of error, the default behavior is to backtrack if no input was consumed.
 -- |

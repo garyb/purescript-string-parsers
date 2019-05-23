@@ -4,7 +4,8 @@ module Text.Parsing.StringParser.Combinators
   ( lookAhead
   , many
   , many1
-  , withError, (<?>)
+  , withError
+  , withError', (<?>)
   , between
   , option
   , optional
@@ -39,7 +40,7 @@ import Data.List.NonEmpty (NonEmptyList(..))
 import Data.List.NonEmpty as NEL
 import Data.Maybe (Maybe(..))
 import Data.NonEmpty ((:|))
-import Text.Parsing.StringParser (Parser(..), fail)
+import Text.Parsing.StringParser (Parser(..), Suggestion, fail, fail')
 
 -- | Read ahead without consuming input.
 lookAhead :: forall a. Parser a -> Parser a
@@ -57,10 +58,13 @@ many1 :: forall a. Parser a -> Parser (NonEmptyList a)
 many1 p = cons' <$> p <*> many p
 
 -- | Provide an error message in case of failure.
-withError :: forall a. Parser a -> String -> Parser a
-withError p msg = p <|> fail msg
+withError :: forall a. Parser a -> String -> List Suggestion -> Parser a
+withError p msg suggestions = p <|> fail msg suggestions
 
-infixl 3 withError as <?>
+withError' :: forall a. Parser a -> String -> Parser a
+withError' p msg = withError p msg Nil
+
+infixl 3 withError' as <?>
 
 -- | Parse a string between opening and closing markers.
 between :: forall a open close. Parser open -> Parser close -> Parser a -> Parser a
@@ -143,7 +147,7 @@ chainr1' p f a = (do f' <- f
 
 -- | Parse using any of a collection of parsers.
 choice :: forall f a. Foldable f => f (Parser a) -> Parser a
-choice = foldl (<|>) (fail "Nothing to parse")
+choice = foldl (<|>) (fail' "Nothing to parse")
 
 -- | Parse values until a terminator.
 manyTill :: forall a end. Parser a -> Parser end -> Parser (List a)

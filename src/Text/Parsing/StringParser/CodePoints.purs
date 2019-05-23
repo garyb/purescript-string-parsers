@@ -29,20 +29,22 @@ import Data.Array.NonEmpty as NEA
 import Data.Char (toCharCode)
 import Data.Either (Either(..))
 import Data.Foldable (class Foldable, foldMap, elem, notElem)
+import Data.List (List(..))
 import Data.Maybe (Maybe(..))
 import Data.String.CodePoints (drop, length, indexOf', stripPrefix)
 import Data.String.CodeUnits (charAt, singleton)
 import Data.String.Pattern (Pattern(..))
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
-import Text.Parsing.StringParser (Parser(..), ParseError(..), try, fail)
+import Data.Unfoldable as U
+import Text.Parsing.StringParser (ParseError(..), Parser(..), fail', try)
 import Text.Parsing.StringParser.Combinators (many, (<?>))
 
 -- | Match the end of the file.
 eof :: Parser Unit
 eof = Parser \s ->
   case s of
-    { str, pos } | pos < length str -> Left { pos, error: ParseError "Expected EOF" }
+    { str, pos } | pos < length str -> Left { pos, error: ParseError { msg: "Expected EOF", suggestions: Nil } }
     _ -> Right { result: unit, suffix: s }
 
 -- | Match any character.
@@ -50,7 +52,7 @@ anyChar :: Parser Char
 anyChar = Parser \{ str, pos } ->
   case charAt pos str of
     Just chr -> Right { result: chr, suffix: { str, pos: pos + 1 } }
-    Nothing -> Left { pos, error: ParseError "Unexpected EOF" }
+    Nothing -> Left { pos, error: ParseError { msg: "Unexpected EOF", suggestions: Nil } }
 
 -- | Match any digit.
 anyDigit :: Parser Char
@@ -58,14 +60,17 @@ anyDigit = try do
   c <- anyChar
   if c >= '0' && c <= '9'
      then pure c
-     else fail $ "Character " <> show c <> " is not a digit"
+     else fail' $ "Character " <> show c <> " is not a digit"
 
 -- | Match the specified string.
 string :: String -> Parser String
 string nt = Parser \s ->
   case s of
     { str, pos } | indexOf' (Pattern nt) pos str == Just pos -> Right { result: nt, suffix: { str, pos: pos + length nt } }
-    { pos } -> Left { pos, error: ParseError ("Expected '" <> nt <> "'.") }
+    { str, pos } -> Left { pos, error: mkError pos str }
+  where 
+    mkError pos str = ParseError { msg: ("Expected '" <> nt <> "'."), suggestions: U.fromMaybe $ mkSuggestion pos str }
+    mkSuggestion pos str = map (\p -> { autoComplete: p, suggestion: nt }) $ stripPrefix (Pattern $ drop pos str) nt
 
 -- | Match a character satisfying the given predicate.
 satisfy :: (Char -> Boolean) -> Parser Char
@@ -73,7 +78,7 @@ satisfy f = try do
   c <- anyChar
   if f c
      then pure c
-     else fail $ "Character " <> show c <> " did not satisfy predicate"
+     else fail' $ "Character " <> show c <> " did not satisfy predicate"
 
 -- | Match the specified character.
 char :: Char -> Parser Char
@@ -103,7 +108,7 @@ lowerCaseChar = try do
   c <- anyChar
   if toCharCode c `elem` (97 .. 122)
      then pure c
-     else fail $ "Expected a lower case character but found " <> show c
+     else fail' $ "Expected a lower case character but found " <> show c
 
 -- | Match any upper case character.
 upperCaseChar :: Parser Char
@@ -111,7 +116,7 @@ upperCaseChar = try do
   c <- anyChar
   if toCharCode c `elem` (65 .. 90)
      then pure c
-     else fail $ "Expected an upper case character but found " <> show c
+     else fail' $ "Expected an upper case character but found " <> show c
 
 -- | Match any letter.
 anyLetter :: Parser Char
@@ -126,7 +131,7 @@ regex :: String -> Parser String
 regex pat =
   case Regex.regex pattern noFlags of
     Left _ ->
-      fail $ "Text.Parsing.StringParser.String.regex': illegal regex " <> pat
+      fail' $ "Text.Parsing.StringParser.String.regex': illegal regex " <> pat
     Right r ->
       matchRegex r
   where
@@ -147,4 +152,4 @@ regex pat =
             Just (Just matched)  ->
               Right { result: matched, suffix: { str, pos: pos + length matched } }
             _ ->
-              Left { pos, error: ParseError "no match" }
+              Left { pos, error: ParseError { msg: "no match", suggestions: Nil } }

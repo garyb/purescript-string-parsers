@@ -14,10 +14,10 @@ import Data.String.Common as SC
 import Data.Unfoldable (replicate)
 import Effect (Effect)
 import Test.Assert (assert', assert)
-import Text.Parsing.StringParser (Parser, runParser, try)
+import Text.Parsing.StringParser (ParseError(..), Parser, Suggestion, runParser, try)
+import Text.Parsing.StringParser.CodeUnits (anyDigit, eof, string, anyChar, regex)
 import Text.Parsing.StringParser.Combinators (many1, endBy1, sepBy1, optionMaybe, many, manyTill, many1Till, chainl, fix, between)
 import Text.Parsing.StringParser.Expr (Assoc(..), Operator(..), buildExprParser)
-import Text.Parsing.StringParser.CodeUnits (anyDigit, eof, string, anyChar, regex)
 
 parens :: forall a. Parser a -> Parser a
 parens = between (string "(") (string ")")
@@ -42,6 +42,16 @@ digit = string "0" $> 0
     <|> string "8" $> 8
     <|> string "9" $> 9
 
+example :: Parser Int
+example
+  =   string "aa" $> 0 
+  <|> string "ab" $> 1
+  <|> string "abc" $> 2
+  <|> string "b" <> (string "1" <|> string "2") $> 3
+  <|> string "bc" $> 4
+  <|> string "cde" $> 5
+  <|> string "cdf" $> 6
+
 exprTest :: Parser Int
 exprTest = buildExprParser [ [Infix (string "/" >>= \_ -> pure div) AssocRight]
                            , [Infix (string "*" >>= \_ -> pure mul) AssocRight]
@@ -63,6 +73,17 @@ parseFail p input = isLeft $ runParser p input
 
 expectResult :: forall a. Eq a => a -> Parser a -> String -> Boolean
 expectResult res p input = runParser p input == Right res
+
+assertFailure :: forall a. Show a => Parser a -> String -> (ParseError -> Boolean) -> Effect Unit
+assertFailure p input pred = 
+  void $ case runParser p input of
+    Right r -> assert' ("expected ParseError got Success " <> show r) false
+    Left l -> assert' ("predicate failed for " <> show l) (pred l)
+
+assertSuggestions :: forall a. Show a => Parser a -> String -> List Suggestion -> Effect Unit
+assertSuggestions p input expected = assertFailure p input failurePred
+  where
+    failurePred (ParseError { suggestions }) = suggestions == expected
 
 testCodeUnits :: Effect Unit
 testCodeUnits = do
@@ -97,3 +118,18 @@ testCodeUnits = do
   assert $ canParse (many1Till (string "a") (string "and")) $ (fold <<< take 10000 $ repeat "a") <> "and"
   -- check correct order
   assert $ expectResult (NonEmptyList ('a' :| 'b':'c':Nil)) (many1Till anyChar (string "d")) "abcd"
+  assertSuggestions (string "ab") "a" $ { autoComplete: "b", suggestion : "ab" } : Nil
+  assertSuggestions (string "ab") "b" $ Nil
+  assertSuggestions (string "ab" <> string "cd") "" $ { autoComplete: "ab", suggestion : "ab" } : Nil
+  assertSuggestions (string "ab" <> string "cd") "a" $ { autoComplete: "b", suggestion : "ab" } : Nil
+  assertSuggestions (string "ab" <> string "cd") "ab" $ { autoComplete: "cd", suggestion : "cd" } : Nil
+  assertSuggestions (string "ab" <> string "cd") "abc" $ { autoComplete: "d", suggestion : "cd" } : Nil
+  assertSuggestions (string "ab" <> string "cd") "b" $ Nil
+  assertSuggestions (string "ab" <|> string "cd") "" $ { autoComplete: "ab", suggestion: "ab" } : { autoComplete: "cd", suggestion: "cd" } : Nil
+  assertSuggestions (string "ab" <|> string "cd") "a" $ { autoComplete: "b", suggestion: "ab" } : Nil
+  assertSuggestions (string "ab" <|> string "cd") "c" $ { autoComplete: "d", suggestion: "cd" } : Nil
+  assertSuggestions (string "ab" <|> string "cd") "b" $ Nil
+  assertSuggestions example "" $ { autoComplete: "aa", suggestion: "aa" } : { autoComplete: "ab", suggestion: "ab" } : { autoComplete: "abc", suggestion: "abc" } : { autoComplete: "b", suggestion: "b" } : { autoComplete: "bc", suggestion: "bc" } : { autoComplete: "cde", suggestion: "cde" } : { autoComplete: "cdf", suggestion: "cdf" } : Nil
+  assertSuggestions example "a" $ { autoComplete: "a", suggestion: "aa" } : { autoComplete: "b", suggestion: "ab" } : { autoComplete: "bc", suggestion: "abc" } : Nil
+  assertSuggestions example "b" $ { autoComplete: "1", suggestion: "1" } : { autoComplete: "2", suggestion: "2" } : Nil
+  assertSuggestions example "c" $ { autoComplete: "de", suggestion : "cde" } : { autoComplete: "df", suggestion : "cdf" } : Nil 

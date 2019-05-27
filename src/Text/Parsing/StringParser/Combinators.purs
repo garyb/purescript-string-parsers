@@ -2,10 +2,10 @@
 
 module Text.Parsing.StringParser.Combinators
   ( lookAhead
-  , many
+  , many 
   , many1
-  , withError
-  , withError', (<?>)
+  , withError, (<?>)
+  , withError', (<??>)
   , between
   , option
   , optional
@@ -40,7 +40,7 @@ import Data.List.NonEmpty (NonEmptyList(..))
 import Data.List.NonEmpty as NEL
 import Data.Maybe (Maybe(..))
 import Data.NonEmpty ((:|))
-import Text.Parsing.StringParser (Parser(..), Suggestion, fail, fail')
+import Text.Parsing.StringParser (ParseError(..), Parser(..), fail, fail')
 
 -- | Read ahead without consuming input.
 lookAhead :: forall a. Parser a -> Parser a
@@ -58,13 +58,14 @@ many1 :: forall a. Parser a -> Parser (NonEmptyList a)
 many1 p = cons' <$> p <*> many p
 
 -- | Provide an error message in case of failure.
-withError :: forall a. Parser a -> String -> List Suggestion -> Parser a
-withError p msg suggestions = p <|> fail msg suggestions
+withError :: forall a. Parser a -> ParseError -> Parser a
+withError p err = p <|> fail err
 
 withError' :: forall a. Parser a -> String -> Parser a
-withError' p msg = withError p msg Nil
+withError' p msg = withError p $ ParseError { msg, suggestions: Nil }
 
-infixl 3 withError' as <?>
+infixl 3 withError as <?>
+infixl 3 withError' as <??>
 
 -- | Parse a string between opening and closing markers.
 between :: forall a open close. Parser open -> Parser close -> Parser a -> Parser a

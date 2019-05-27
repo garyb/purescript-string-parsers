@@ -13,7 +13,7 @@ import Control.Alt ((<|>))
 import Data.Foldable (foldl, foldr)
 import Data.List (List(..))
 import Text.Parsing.StringParser (Parser)
-import Text.Parsing.StringParser.Combinators (choice, (<?>))
+import Text.Parsing.StringParser.Combinators (choice, (<??>))
 
 -- | Operator associativity types.
 data Assoc = AssocNone | AssocLeft | AssocRight
@@ -43,8 +43,8 @@ buildExprParser operators simpleExpr =
         rassocOp  = choice accum.rassoc
         lassocOp  = choice accum.lassoc
         nassocOp  = choice accum.nassoc
-        prefixOp  = choice accum.prefix <?> ""
-        postfixOp = choice accum.postfix <?> ""
+        prefixOp  = choice accum.prefix <??> ""
+        postfixOp = choice accum.postfix <??> ""
 
         postfixP = postfixOp <|> pure identity
         prefixP  = prefixOp <|> pure identity
@@ -54,7 +54,7 @@ buildExprParser operators simpleExpr =
           <|> lassocP x lassocOp prefixP term postfixP
           <|> nassocP x nassocOp prefixP term postfixP
           <|> pure x
-          <?> "operator"
+          <??> "operator"
 
     splitOp :: forall b. Operator b -> SplitAccum b -> SplitAccum b
     splitOp (Infix op AssocNone)  accum = accum { nassoc  = Cons op accum.nassoc }

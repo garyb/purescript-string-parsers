@@ -38,6 +38,9 @@ derive instance eqParseError :: Eq ParseError
 
 derive instance ordParseError :: Ord ParseError
 
+suggestion :: String -> Suggestion
+suggestion s = { autoComplete: s, suggestion: s }
+
 -- | A parser is represented as a function which takes a pair of
 -- | continuations for failure and success.
 newtype Parser a = Parser (PosString -> Either { pos :: Pos, error :: ParseError } { result :: a, suffix :: PosString })
@@ -66,12 +69,12 @@ instance altParser :: Alt Parser where
   alt (Parser p1) p2 = Parser \s ->
     case p1 s of
       left@ Left { error: ParseError { msg, suggestions }, pos } 
-          | s.pos == pos -> unParser (addSuggestions suggestions p2) s
+          | s.pos == pos -> unParser (prependSuggestions p2 suggestions) s
           | otherwise -> left
       right -> right
 
 instance plusParser :: Plus Parser where
-  empty = fail "No alternative" Nil
+  empty = fail' "No alternative"
 
 instance alternativeParser :: Alternative Parser
 
@@ -96,18 +99,38 @@ instance lazyParser :: Lazy (Parser a) where
   defer f = Parser $ \str -> unParser (f unit) str
 
 -- | Fail with the specified message and suggestions.
-fail :: forall a. String -> List Suggestion -> Parser a
-fail msg suggestions = Parser \{ pos } -> Left { pos, error: ParseError { msg, suggestions } }
+fail :: forall a. ParseError -> Parser a
+fail error = Parser \{ pos } -> Left { pos, error }
 
 -- | Fail with the specified message.
 fail' :: forall a. String -> Parser a
-fail' msg = fail msg Nil
+fail' msg = fail $ ParseError { msg, suggestions: Nil }
 
-addSuggestions :: forall a. List Suggestion -> Parser a -> Parser a
-addSuggestions ss (Parser p) = Parser \s ->
+mapError :: forall a. Parser a -> (ParseError -> ParseError) -> Parser a
+mapError (Parser p) f = Parser \s ->
   case p s of
-    Left { error: ParseError { msg, suggestions }, pos } -> Left { error: ParseError { msg, suggestions: ss <> suggestions }, pos }
-    other -> other 
+    Left { error, pos } -> Left { error: f error, pos }
+    other -> other
+
+mapSuggestions :: forall a. Parser a -> (List Suggestion -> List Suggestion) -> Parser a
+mapSuggestions p f = mapError p g 
+  where
+    g (ParseError {msg, suggestions}) = ParseError { msg, suggestions: f suggestions }
+
+infixl 3 mapSuggestions as <?$>
+
+prependSuggestions :: forall a. Parser a -> List Suggestion -> Parser a
+prependSuggestions p ss = mapSuggestions p (ss <> _)
+
+appendSuggestions :: forall a. Parser a -> List Suggestion -> Parser a
+appendSuggestions p ss = mapSuggestions p (_ <> ss)
+
+infixl 3 appendSuggestions as <?+>
+
+setSuggestions :: forall a. Parser a -> List Suggestion -> Parser a
+setSuggestions p ss = mapSuggestions p (const ss)
+
+infixl 3 setSuggestions as <?=>
 
 -- | In case of error, the default behavior is to backtrack if no input was consumed.
 -- |

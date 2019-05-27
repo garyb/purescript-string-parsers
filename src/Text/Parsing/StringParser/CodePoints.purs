@@ -38,7 +38,7 @@ import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Unfoldable as U
 import Text.Parsing.StringParser (ParseError(..), Parser(..), fail', try)
-import Text.Parsing.StringParser.Combinators (many, (<?>))
+import Text.Parsing.StringParser.Combinators (many, (<?>), (<??>))
 
 -- | Match the end of the file.
 eof :: Parser Unit
@@ -82,7 +82,12 @@ satisfy f = try do
 
 -- | Match the specified character.
 char :: Char -> Parser Char
-char c = satisfy (_ == c) <?> "Could not match character " <> show c
+char c = 
+  satisfy (_ == c) <?>
+    ParseError 
+      { msg: "Could not match character " <> show c
+      , suggestions: pure { autoComplete: singleton c, suggestion: singleton c }
+      }
 
 -- | Match many whitespace characters.
 whiteSpace :: Parser String
@@ -120,11 +125,11 @@ upperCaseChar = try do
 
 -- | Match any letter.
 anyLetter :: Parser Char
-anyLetter = lowerCaseChar <|> upperCaseChar <?> "Expected a letter"
+anyLetter = lowerCaseChar <|> upperCaseChar <??> "Expected a letter"
 
 -- | Match a letter or a number.
 alphaNum :: Parser Char
-alphaNum = anyLetter <|> anyDigit <?> "Expected a letter or a number"
+alphaNum = anyLetter <|> anyDigit <??> "Expected a letter or a number"
 
 -- | match the regular expression
 regex :: String -> Parser String

@@ -15,7 +15,7 @@ import Data.Unfoldable (replicate)
 import Effect (Effect)
 import Test.Assert (assert', assert)
 import Text.Parsing.StringParser (ParseError(..), Parser, Suggestion, runParser, suggestion, try, (<?+>), (<?=>), (<?$>))
-import Text.Parsing.StringParser.CodeUnits (anyChar, anyDigit, char, eof, regex, string)
+import Text.Parsing.StringParser.CodeUnits (anyChar, anyDigit, char, eof, oneOf, regex, string)
 import Text.Parsing.StringParser.Combinators (many1, endBy1, sepBy1, optionMaybe, many, manyTill, many1Till, chainl, fix, between)
 import Text.Parsing.StringParser.Expr (Assoc(..), Operator(..), buildExprParser)
 
@@ -122,6 +122,7 @@ testCodeUnits = do
   assertSuggestions (char 'a' <?=> pure (suggestion "ab")) "" $ { autoComplete: "ab", suggestion : "ab" } : Nil
   assertSuggestions (char 'a' <?+> pure (suggestion "ab")) "" $ { autoComplete: "a", suggestion : "a" } : { autoComplete: "ab", suggestion : "ab" } : Nil
   assertSuggestions (char 'a' <?$> map (\{autoComplete, suggestion} -> { autoComplete: autoComplete <> "!", suggestion: suggestion <> "!" })) "" $ { autoComplete: "a!", suggestion : "a!" } : Nil
+  assertSuggestions (oneOf ['a', 'b']) "" $ { autoComplete: "a", suggestion : "a" } : { autoComplete: "b", suggestion : "b" } : Nil
   assertSuggestions (string "ab") "a" $ { autoComplete: "b", suggestion : "ab" } : Nil
   assertSuggestions (string "ab") "b" $ Nil
   assertSuggestions (string "ab" <> string "cd") "" $ { autoComplete: "ab", suggestion : "ab" } : Nil

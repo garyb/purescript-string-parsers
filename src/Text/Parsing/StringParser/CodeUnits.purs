@@ -30,14 +30,15 @@ import Data.Char (toCharCode)
 import Data.Either (Either(..))
 import Data.Foldable (class Foldable, foldMap, elem, notElem)
 import Data.List (List(..))
+import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.String.CodeUnits as S
 import Data.String.Pattern (Pattern(..))
 import Data.String.Regex as Regex
 import Data.String.Regex.Flags (noFlags)
 import Data.Unfoldable as U
-import Text.Parsing.StringParser (ParseError(..), Parser(..), fail', try)
-import Text.Parsing.StringParser.Combinators (many, (<?>), (<??>)) 
+import Text.Parsing.StringParser (ParseError(..), Parser(..), fail', suggestion, try, (<?=>))
+import Text.Parsing.StringParser.Combinators (many, (<?>), (<??>))
 
 -- | Match the end of the file.
 eof :: Parser Unit
@@ -85,7 +86,7 @@ char c =
   satisfy (_ == c) <?>
     ParseError 
       { msg: "Could not match character " <> show c
-      , suggestions: pure { autoComplete: S.singleton c, suggestion: S.singleton c }
+      , suggestions: pure $ suggestion $ S.singleton c
       }
 
 -- | Match many whitespace characters.
@@ -99,8 +100,8 @@ skipSpaces :: Parser Unit
 skipSpaces = void whiteSpace
 
 -- | Match one of the characters in the foldable structure.
-oneOf :: forall f. Foldable f => f Char -> Parser Char
-oneOf = satisfy <<< flip elem
+oneOf :: forall f. Functor f => Foldable f => f Char -> Parser Char
+oneOf cs = (satisfy <<< flip elem) cs <?=> List.fromFoldable (suggestion <$> S.singleton <$> cs) 
 
 -- | Match any character not in the foldable structure.
 noneOf :: forall f. Foldable f => f Char -> Parser Char

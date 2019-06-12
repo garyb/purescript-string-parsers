@@ -68,7 +68,7 @@ instance applicativeParser :: Applicative Parser where
 instance altParser :: Alt Parser where
   alt (Parser p1) p2 = Parser \s ->
     case p1 s of
-      left@ Left { error: ParseError { msg, suggestions }, pos } 
+      left@ (Left { error: ParseError { msg, suggestions }, pos })
           | s.pos == pos -> unParser (prependSuggestions p2 suggestions) s
           | otherwise -> left
       right -> right

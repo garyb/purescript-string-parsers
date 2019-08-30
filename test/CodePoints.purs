@@ -14,10 +14,10 @@ import Data.String.Common as SC
 import Data.Unfoldable (replicate)
 import Effect (Effect)
 import Test.Assert (assert', assert)
-import Text.Parsing.StringParser (Parser, runParser, try)
+import Text.Parsing.StringParser (ParseError(..), Parser, Suggestion, runParser, try)
+import Text.Parsing.StringParser.CodePoints (anyChar, anyDigit, char, eof, regex, string)
 import Text.Parsing.StringParser.Combinators (many1, endBy1, sepBy1, optionMaybe, many, manyTill, many1Till, chainl, fix, between)
 import Text.Parsing.StringParser.Expr (Assoc(..), Operator(..), buildExprParser)
-import Text.Parsing.StringParser.CodePoints (anyDigit, eof, string, anyChar, regex)
 
 parens :: forall a. Parser a -> Parser a
 parens = between (string "(") (string ")")
@@ -64,6 +64,21 @@ parseFail p input = isLeft $ runParser p input
 expectResult :: forall a. Eq a => a -> Parser a -> String -> Boolean
 expectResult res p input = runParser p input == Right res
 
+assertSuccess :: forall a. Eq a => Show a => a -> Parser a -> String -> Effect Unit
+assertSuccess res p input = assert' (show $ runParser p input)
+  $runParser p input == Right res
+
+assertFailure :: forall a. Show a => Parser a -> String -> (ParseError -> Boolean) -> Effect Unit
+assertFailure p input pred =
+  void $ case runParser p input of
+    Right r -> assert' ("expected ParseError got Success " <> show r) false
+    Left l -> assert' ("predicate failed for " <> show l) (pred l)
+
+assertSuggestions :: forall a. Show a => Parser a -> String -> List Suggestion -> Effect Unit
+assertSuggestions p input expected = assertFailure p input failurePred
+  where
+    failurePred (ParseError { suggestions }) = suggestions == expected
+
 testCodePoints :: Effect Unit
 testCodePoints = do
   assert' "many should not blow the stack" $ canParse (many (string "a")) (SC.joinWith "" $ replicate 100000 "a")
@@ -97,3 +112,14 @@ testCodePoints = do
   assert $ canParse (many1Till (string "a") (string "and")) $ (fold <<< take 10000 $ repeat "a") <> "and"
   -- check correct order
   assert $ expectResult (NonEmptyList ('a' :| 'b':'c':Nil)) (many1Till anyChar (string "d")) "abcd"
+
+  let 
+    cp1 = "񅣊" -- CodePoint 0x458CA
+    cp2 = cp1 <> cp1
+
+  assert $ expectResult cp1 (string cp1) cp1
+  assertSuggestions (string "ab") "a" $ { autoComplete: "b", suggestion : "ab" } : Nil
+  assertSuggestions (string cp2) cp1 $ { autoComplete: cp1, suggestion : cp2 } : Nil
+  assertSuccess cp1 (char '[' *> string cp1 <* char ']' <* eof ) ("[" <> cp1 <> "]")
+  assertSuccess cp1 (char '(' *> string cp1 <* string ")" <* eof ) ("(" <> cp1 <> ")")
+  
